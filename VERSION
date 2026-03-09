@@ -1,0 +1,23 @@
+FixAdm v1.1
+AI-powered администратор для Ubuntu Linux
+
+Дата релиза: 2026-03-09
+Автор: Fixcat
+GitHub: https://github.com/Fixcat/Ubutu-Fix-Ai-Helper
+
+Возможности:
+- Поддержка 3 AI провайдеров (OpenAI, Claude, GitHub Models)
+- Память на 50 сообщений
+- Автоматическое выполнение команд
+- Интерактивный чат
+- Изменение настроек прямо из чата (/settings)
+- Красивый интерфейс
+
+Файлы:
+- fixadm.sh - основной скрипт
+- install.sh - установка
+- uninstall.sh - удаление
+- README.md - документация
+- EXAMPLES.md - примеры
+- QUICKSTART.md - быстрый старт
+- CHANGELOG.md - история изменений
