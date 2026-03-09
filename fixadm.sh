@@ -27,6 +27,133 @@ API_KEY=""
 MODEL_ID=""
 MAX_MESSAGES=50
 
+# Информация о репозитории
+REPO_URL="https://github.com/Fixcat/Ubutu-Fix-Ai-Helper"
+REPO_RAW_URL="https://raw.githubusercontent.com/Fixcat/Ubutu-Fix-Ai-Helper/main"
+CURRENT_VERSION="1.1"
+UPDATE_CHECK_FILE="$HOME/.fixadm-last-update-check"
+
+# Функция для проверки обновлений
+check_for_updates() {
+    # Проверяем не чаще раза в день
+    if [ -f "$UPDATE_CHECK_FILE" ]; then
+        local last_check=$(cat "$UPDATE_CHECK_FILE")
+        local current_time=$(date +%s)
+        local time_diff=$((current_time - last_check))
+        
+        # Если прошло меньше 24 часов (86400 секунд), пропускаем проверку
+        if [ $time_diff -lt 86400 ]; then
+            return
+        fi
+    fi
+    
+    echo -e "${CYAN}→ Проверка обновлений...${NC}"
+    
+    # Получаем версию с GitHub
+    local remote_version=$(curl -s "$REPO_RAW_URL/VERSION" | grep -oP 'FixAdm v\K[0-9.]+' | head -1)
+    
+    if [ -z "$remote_version" ]; then
+        # Не удалось получить версию, пропускаем
+        return
+    fi
+    
+    # Сохраняем время последней проверки
+    date +%s > "$UPDATE_CHECK_FILE"
+    
+    # Сравниваем версии
+    if [ "$remote_version" != "$CURRENT_VERSION" ]; then
+        echo ""
+        echo -e "${YELLOW}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║${WHITE}${BOLD}           Доступна новая версия FixAdm!                ${NC}${YELLOW}║${NC}"
+        echo -e "${YELLOW}╠════════════════════════════════════════════════════════════╣${NC}"
+        echo -e "${YELLOW}║${NC} Текущая версия: ${RED}$CURRENT_VERSION${NC}"
+        echo -e "${YELLOW}║${NC} Новая версия:    ${GREEN}$remote_version${NC}"
+        echo -e "${YELLOW}╚════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${CYAN}Хотите обновить сейчас? (y/n):${NC} "
+        read -r update_choice
+        
+        if [[ $update_choice =~ ^[Yy]$ ]]; then
+            update_fixadm
+        else
+            echo -e "${YELLOW}Вы можете обновить позже командой: fixadm --update${NC}"
+            echo ""
+        fi
+    else
+        echo -e "${GREEN}✓ У вас установлена последняя версия${NC}"
+    fi
+}
+
+# Функция для обновления FixAdm
+update_fixadm() {
+    echo ""
+    echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              Обновление FixAdm                             ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    # Создаем временную директорию
+    local temp_dir=$(mktemp -d)
+    
+    echo -e "${CYAN}→ Скачивание обновления...${NC}"
+    
+    # Клонируем репозиторий
+    if git clone --depth 1 "$REPO_URL.git" "$temp_dir" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Обновление скачано${NC}"
+        
+        # Создаем бэкап текущей версии
+        if [ -f "/usr/local/bin/fixadm" ]; then
+            echo -e "${CYAN}→ Создание резервной копии...${NC}"
+            sudo cp /usr/local/bin/fixadm /usr/local/bin/fixadm.backup
+            echo -e "${GREEN}✓ Резервная копия создана: /usr/local/bin/fixadm.backup${NC}"
+        fi
+        
+        # Устанавливаем новую версию
+        echo -e "${CYAN}→ Установка обновления...${NC}"
+        cd "$temp_dir"
+        chmod +x install.sh
+        
+        if sudo ./install.sh > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ Обновление установлено успешно!${NC}"
+            echo ""
+            echo -e "${YELLOW}Изменения вступят в силу при следующем запуске.${NC}"
+            echo -e "${CYAN}Перезапустите FixAdm командой: fixadm${NC}"
+            echo ""
+            
+            # Показываем changelog
+            if [ -f "$temp_dir/CHANGELOG.md" ]; then
+                echo -e "${CYAN}Что нового:${NC}"
+                head -20 "$temp_dir/CHANGELOG.md"
+                echo ""
+            fi
+            
+            # Удаляем временную директорию
+            rm -rf "$temp_dir"
+            
+            exit 0
+        else
+            echo -e "${RED}✗ Ошибка при установке обновления${NC}"
+            
+            # Восстанавливаем из бэкапа
+            if [ -f "/usr/local/bin/fixadm.backup" ]; then
+                echo -e "${CYAN}→ Восстановление из резервной копии...${NC}"
+                sudo mv /usr/local/bin/fixadm.backup /usr/local/bin/fixadm
+                echo -e "${GREEN}✓ Восстановлено${NC}"
+            fi
+            
+            rm -rf "$temp_dir"
+        fi
+    else
+        echo -e "${RED}✗ Не удалось скачать обновление${NC}"
+        echo -e "${YELLOW}Проверьте подключение к интернету${NC}"
+        rm -rf "$temp_dir"
+    fi
+    
+    echo ""
+    echo -e "${CYAN}Нажмите Enter для продолжения...${NC}"
+    read
+}
+
 # Функция для красивого вывода заголовка
 print_header() {
     clear
@@ -818,6 +945,33 @@ main() {
         echo -e "${YELLOW}Установите: sudo apt install curl${NC}"
         exit 1
     fi
+    
+    # Обработка аргументов командной строки
+    if [ "$1" = "--update" ] || [ "$1" = "-u" ]; then
+        update_fixadm
+        exit 0
+    fi
+    
+    if [ "$1" = "--version" ] || [ "$1" = "-v" ]; then
+        echo "FixAdm v$CURRENT_VERSION"
+        exit 0
+    fi
+    
+    if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+        echo "FixAdm v$CURRENT_VERSION - AI-powered администратор для Ubuntu"
+        echo ""
+        echo "Использование:"
+        echo "  fixadm              Запустить интерактивный чат"
+        echo "  fixadm --update     Проверить и установить обновления"
+        echo "  fixadm --version    Показать версию"
+        echo "  fixadm --help       Показать эту справку"
+        echo ""
+        echo "Репозиторий: $REPO_URL"
+        exit 0
+    fi
+    
+    # Проверка обновлений при запуске
+    check_for_updates
     
     # Выбор провайдера
     select_provider

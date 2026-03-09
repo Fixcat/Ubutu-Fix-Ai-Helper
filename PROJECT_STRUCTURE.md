@@ -9,13 +9,26 @@ FixAdm/
 ├── README.md              # Полная документация
 ├── QUICKSTART.md          # Быстрый старт
 ├── EXAMPLES.md            # Примеры использования
+├── CHANGELOG.md           # История изменений
+├── UPDATE_GUIDE.md        # Руководство по обновлению
+├── CONTRIBUTING.md        # Руководство для контрибьюторов
+├── SECURITY.md            # Политика безопасности
+├── LICENSE                # MIT лицензия
 ├── VERSION                # Информация о версии
-└── PROJECT_STRUCTURE.md   # Этот файл
+├── PROJECT_STRUCTURE.md   # Этот файл
+├── GITHUB_SETUP.md        # Инструкция по публикации на GitHub
+├── RELEASE_CHECKLIST.md   # Чеклист перед релизом
+├── .gitignore             # Игнорируемые файлы
+└── .github/               # GitHub конфигурация
+    ├── ISSUE_TEMPLATE/
+    │   ├── bug_report.md
+    │   └── feature_request.md
+    └── PULL_REQUEST_TEMPLATE.md
 ```
 
 ## Описание файлов
 
-### fixadm.sh (22KB)
+### fixadm.sh (35KB)
 Основной скрипт приложения. Содержит:
 - Интерфейс выбора провайдера
 - Функции для работы с OpenAI, Claude, GitHub Models API
@@ -23,6 +36,8 @@ FixAdm/
 - Интерактивный чат
 - Выполнение команд с подтверждением
 - Сохранение/загрузка конфигурации
+- Автоматическую проверку обновлений
+- Функцию обновления через GitHub
 
 ### install.sh (1.2KB)
 Автоматическая установка:
