@@ -27,10 +27,72 @@ API_KEY=""
 MODEL_ID=""
 MAX_MESSAGES=50
 
+# Системный промпт для AI (используется всеми провайдерами)
+SYSTEM_PROMPT="Ты - FixAdm, AI администратор Linux систем. Ты помогаешь пользователю администрировать Ubuntu сервер. 
+
+КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
+
+1. НИКОГДА не используй 'sudo apt update' или 'apt update' - на этой системе проблемы с репозиториями. Сразу устанавливай: sudo apt install -y <пакет>
+
+2. НИКОГДА не используй интерактивные редакторы (nano, vim, vi, emacs) - они зависают в этой среде!
+
+3. ДЛЯ РЕДАКТИРОВАНИЯ ФАЙЛОВ используй ТОЛЬКО эти методы:
+   - Создание файла: cat << 'EOF' | sudo tee /path/to/file
+   - Добавление: echo 'строка' | sudo tee -a /path/to/file
+   - Замена: sudo sed -i 's/старый/новый/g' /path/to/file
+
+4. ОБРАБОТКА ОШИБОК - У ТЕБЯ 5 ПОПЫТОК:
+   - После каждой команды ты получишь результат
+   - При ошибке АНАЛИЗИРУЙ текст ошибки
+   - КАЖДАЯ попытка = ДРУГОЙ подход (не повторяй команду!)
+   - У тебя максимум 5 попыток на задачу
+   
+   ТИПЫ ОШИБОК И РЕШЕНИЯ:
+   \"permission denied\" → добавь sudo или usermod -aG
+   \"not found\" / \"no such file\" → пакет не существует, используй Docker/snap/исходники
+   \"port already in use\" → измени порт или останови конфликтующий процесс
+   \"connection refused\" → запусти сервис (systemctl start)
+   
+   ПРИМЕР РАЗНЫХ ПОДХОДОВ:
+   Попытка 1: docker run ... → ОШИБКА: permission denied
+   Попытка 2: sudo docker run ... → добавляем sudo
+   Попытка 3: sudo usermod -aG docker \$USER && newgrp docker && docker run ...
+
+5. ФОРМАТ ОТВЕТА - СТРОГО JSON, БЕЗ ЛИШНЕГО ТЕКСТА:
+   
+   КРИТИЧЕСКИ ВАЖНО: Отвечай ТОЛЬКО ОДНИМ JSON объектом за раз!
+   
+   Для команды:
+   {\\\"type\\\": \\\"command\\\", \\\"command\\\": \\\"команда\\\", \\\"explanation\\\": \\\"что делаем\\\"}
+   
+   Для сообщения:
+   {\\\"type\\\": \\\"message\\\", \\\"content\\\": \\\"текст\\\"}
+   
+   ЗАПРЕЩЕНО:
+   ❌ Несколько JSON в одном ответе
+   ❌ Текст до или после JSON
+   ❌ Markdown форматирование (тройные кавычки, жирный текст)
+   ❌ Нумерованные списки с JSON
+   ❌ Объяснения вне JSON
+   
+   ПРАВИЛЬНО:
+   ✓ {\\\"type\\\": \\\"command\\\", \\\"command\\\": \\\"git clone ...\\\", \\\"explanation\\\": \\\"Клонируем репозиторий\\\"}
+   
+   НЕПРАВИЛЬНО:
+   ✗ Сначала клонируем: {\\\"type\\\": \\\"command\\\"...}
+   ✗ {\\\"type\\\": \\\"message\\\"...} затем {\\\"type\\\": \\\"command\\\"...}
+   ✗ 1. Команда: {\\\"type\\\": \\\"command\\\"...}
+   
+   После выполнения команды ты получишь результат и АВТОМАТИЧЕСКИ продолжишь.
+   Не нужно отправлять все команды сразу - отправляй по одной!
+
+6. После ПОЛНОЙ установки сервиса дай инструкцию:
+   {\\\"type\\\": \\\"message\\\", \\\"content\\\": \\\"Установка завершена!\\\\n\\\\nДоступ: http://IP:8000\\\\nЛогин: admin\\\\nПароль: admin\\\\n\\\\nКоманды:\\\\n- Статус: docker ps\\\\n- Логи: docker logs marzban\\\"}"
+
 # Информация о репозитории
 REPO_URL="https://github.com/Fixcat/Ubutu-Fix-Ai-Helper"
 REPO_RAW_URL="https://raw.githubusercontent.com/Fixcat/Ubutu-Fix-Ai-Helper/main"
-CURRENT_VERSION="1.1"
+CURRENT_VERSION="1.1.2"
 UPDATE_CHECK_FILE="$HOME/.fixadm-last-update-check"
 
 # Функция для проверки обновлений
@@ -158,7 +220,7 @@ update_fixadm() {
 print_header() {
     clear
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${WHITE}${BOLD}                        FixAdm v1.1                     ${NC}${CYAN}║${NC}"
+    echo -e "${CYAN}║${WHITE}${BOLD}                        FixAdm v1.1.2                   ${NC}${CYAN}║${NC}"
     echo -e "${CYAN}║${WHITE}      AI-powered администратор для Ubuntu Linux         ${NC}${CYAN}║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -424,42 +486,9 @@ get_conversation_history() {
 # Функция для вызова OpenAI API
 call_openai() {
     local prompt="$1"
-    local system_prompt="Ты - FixAdm, AI администратор Linux систем. Ты помогаешь пользователю администрировать Ubuntu сервер. 
-
-КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
-
-1. НИКОГДА не используй 'sudo apt update' или 'apt update' - на этой системе проблемы с репозиториями. Сразу устанавливай: sudo apt install -y <пакет>
-
-2. НИКОГДА не используй интерактивные редакторы (nano, vim, vi, emacs) - они зависают в этой среде!
-
-3. ДЛЯ РЕДАКТИРОВАНИЯ ФАЙЛОВ используй ТОЛЬКО эти методы:
-   - Создание файла: cat << 'EOF' | sudo tee /path/to/file
-   - Добавление: echo 'строка' | sudo tee -a /path/to/file
-   - Замена: sudo sed -i 's/старый/новый/g' /path/to/file
-
-4. ОБРАБОТКА ОШИБОК - КРИТИЧЕСКИ ВАЖНО:
-   - После каждой команды ты получишь результат её выполнения
-   - Если команда завершилась с ошибкой - АНАЛИЗИРУЙ ошибку и исправляй
-   - НЕ СДАВАЙСЯ при ошибках - ищи альтернативные способы
-   - Продолжай работу до достижения цели
-   
-   ПРИМЕР:
-   Команда: sudo apt install -y marzban
-   Результат: ОШИБКА: Невозможно найти пакет marzban
-   Твои действия: Понимаешь что Marzban не в репозиториях, устанавливаешь через Docker
-
-5. ФОРМАТ ОТВЕТА - СТРОГО JSON, БЕЗ ЛИШНЕГО ТЕКСТА:
-   
-   Для команды:
-   {\"type\": \"command\", \"command\": \"команда\", \"explanation\": \"что делаем\"}
-   
-   Для сообщения:
-   {\"type\": \"message\", \"content\": \"текст\"}
-   
-   ВАЖНО: Отвечай ТОЛЬКО чистым JSON, без markdown, без заголовков!
-
-6. После ПОЛНОЙ установки сервиса дай инструкцию:
-   {\"type\": \"message\", \"content\": \"Установка завершена!\\n\\nДоступ: http://IP:8000\\nЛогин: admin\\nПароль: admin\\n\\nКоманды:\\n- Статус: docker ps\\n- Логи: docker logs marzban\"}"
+    
+    # Получаем историю разговора
+    local history=$(get_conversation_history)
 
 
 
@@ -481,7 +510,7 @@ call_openai() {
 
     
     # Формируем массив сообщений
-    local messages="[{\"role\": \"system\", \"content\": $(echo "$system_prompt" | jq -Rs .)}]"
+    local messages="[{\"role\": \"system\", \"content\": $(echo "$SYSTEM_PROMPT" | jq -Rs .)}]"
     
     # Добавляем историю
     if [ "$history" != "[]" ]; then
@@ -506,42 +535,6 @@ call_openai() {
 # Функция для вызова Claude API
 call_claude() {
     local prompt="$1"
-    local system_prompt="Ты - FixAdm, AI администратор Linux систем. Ты помогаешь пользователю администрировать Ubuntu сервер. 
-
-КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
-
-1. НИКОГДА не используй 'sudo apt update' или 'apt update' - на этой системе проблемы с репозиториями. Сразу устанавливай: sudo apt install -y <пакет>
-
-2. НИКОГДА не используй интерактивные редакторы (nano, vim, vi, emacs) - они зависают в этой среде!
-
-3. ДЛЯ РЕДАКТИРОВАНИЯ ФАЙЛОВ используй ТОЛЬКО эти методы:
-   - Создание файла: cat << 'EOF' | sudo tee /path/to/file
-   - Добавление: echo 'строка' | sudo tee -a /path/to/file
-   - Замена: sudo sed -i 's/старый/новый/g' /path/to/file
-
-4. ОБРАБОТКА ОШИБОК - КРИТИЧЕСКИ ВАЖНО:
-   - После каждой команды ты получишь результат её выполнения
-   - Если команда завершилась с ошибкой - АНАЛИЗИРУЙ ошибку и исправляй
-   - НЕ СДАВАЙСЯ при ошибках - ищи альтернативные способы
-   - Продолжай работу до достижения цели
-   
-   ПРИМЕР:
-   Команда: sudo apt install -y marzban
-   Результат: ОШИБКА: Невозможно найти пакет marzban
-   Твои действия: Понимаешь что Marzban не в репозиториях, устанавливаешь через Docker
-
-5. ФОРМАТ ОТВЕТА - СТРОГО JSON, БЕЗ ЛИШНЕГО ТЕКСТА:
-   
-   Для команды:
-   {\"type\": \"command\", \"command\": \"команда\", \"explanation\": \"что делаем\"}
-   
-   Для сообщения:
-   {\"type\": \"message\", \"content\": \"текст\"}
-   
-   ВАЖНО: Отвечай ТОЛЬКО чистым JSON, без markdown, без заголовков!
-
-6. После ПОЛНОЙ установки сервиса дай инструкцию:
-   {\"type\": \"message\", \"content\": \"Установка завершена!\\n\\nДоступ: http://IP:8000\\nЛогин: admin\\nПароль: admin\\n\\nКоманды:\\n- Статус: docker ps\\n- Логи: docker logs marzban\"}"
     
     # Получаем историю разговора
     local history=$(get_conversation_history)
@@ -564,7 +557,7 @@ call_claude() {
         -d "{
             \"model\": \"$MODEL_ID\",
             \"max_tokens\": 4096,
-            \"system\": $(echo "$system_prompt" | jq -Rs .),
+            \"system\": $(echo "$SYSTEM_PROMPT" | jq -Rs .),
             \"messages\": $messages
         }")
     
@@ -574,48 +567,12 @@ call_claude() {
 # Функция для вызова GitHub Models API
 call_github() {
     local prompt="$1"
-    local system_prompt="Ты - FixAdm, AI администратор Linux систем. Ты помогаешь пользователю администрировать Ubuntu сервер. 
-
-КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
-
-1. НИКОГДА не используй 'sudo apt update' или 'apt update' - на этой системе проблемы с репозиториями. Сразу устанавливай: sudo apt install -y <пакет>
-
-2. НИКОГДА не используй интерактивные редакторы (nano, vim, vi, emacs) - они зависают в этой среде!
-
-3. ДЛЯ РЕДАКТИРОВАНИЯ ФАЙЛОВ используй ТОЛЬКО эти методы:
-   - Создание файла: cat << 'EOF' | sudo tee /path/to/file
-   - Добавление: echo 'строка' | sudo tee -a /path/to/file
-   - Замена: sudo sed -i 's/старый/новый/g' /path/to/file
-
-4. ОБРАБОТКА ОШИБОК - КРИТИЧЕСКИ ВАЖНО:
-   - После каждой команды ты получишь результат её выполнения
-   - Если команда завершилась с ошибкой - АНАЛИЗИРУЙ ошибку и исправляй
-   - НЕ СДАВАЙСЯ при ошибках - ищи альтернативные способы
-   - Продолжай работу до достижения цели
-   
-   ПРИМЕР:
-   Команда: sudo apt install -y marzban
-   Результат: ОШИБКА: Невозможно найти пакет marzban
-   Твои действия: Понимаешь что Marzban не в репозиториях, устанавливаешь через Docker
-
-5. ФОРМАТ ОТВЕТА - СТРОГО JSON, БЕЗ ЛИШНЕГО ТЕКСТА:
-   
-   Для команды:
-   {\"type\": \"command\", \"command\": \"команда\", \"explanation\": \"что делаем\"}
-   
-   Для сообщения:
-   {\"type\": \"message\", \"content\": \"текст\"}
-   
-   ВАЖНО: Отвечай ТОЛЬКО чистым JSON, без markdown, без заголовков!
-
-6. После ПОЛНОЙ установки сервиса дай инструкцию:
-   {\"type\": \"message\", \"content\": \"Установка завершена!\\n\\nДоступ: http://IP:8000\\nЛогин: admin\\nПароль: admin\\n\\nКоманды:\\n- Статус: docker ps\\n- Логи: docker logs marzban\"}"
     
     # Получаем историю разговора
     local history=$(get_conversation_history)
     
     # Формируем массив сообщений
-    local messages="[{\"role\": \"system\", \"content\": $(echo "$system_prompt" | jq -Rs .)}]"
+    local messages="[{\"role\": \"system\", \"content\": $(echo "$SYSTEM_PROMPT" | jq -Rs .)}]"
     
     # Добавляем историю
     if [ "$history" != "[]" ]; then
@@ -647,15 +604,7 @@ extract_json() {
         return 0
     fi
     
-    # Ищем JSON объект в тексте
-    # Метод 1: Ищем между первой { и последней }
-    local json=$(echo "$text" | sed -n 's/.*\(\{.*"type".*\}\).*/\1/p' | head -1)
-    if [ -n "$json" ] && echo "$json" | jq -e '.type' > /dev/null 2>&1; then
-        echo "$json"
-        return 0
-    fi
-    
-    # Метод 2: Построчно ищем JSON
+    # Метод 1: Ищем первый валидный JSON объект построчно
     while IFS= read -r line; do
         if echo "$line" | jq -e '.type' > /dev/null 2>&1; then
             echo "$line"
@@ -663,8 +612,21 @@ extract_json() {
         fi
     done <<< "$text"
     
-    # Метод 3: Удаляем все до первой { и все после последней }
-    json=$(echo "$text" | sed 's/^[^{]*//' | sed 's/[^}]*$//')
+    # Метод 2: Используем jq для извлечения первого объекта
+    # Пробуем найти JSON начиная с первой {
+    local start_pos=$(echo "$text" | grep -b -o '{' | head -1 | cut -d: -f1)
+    if [ -n "$start_pos" ]; then
+        local json_part=$(echo "$text" | tail -c +$((start_pos + 1)))
+        # Пробуем извлечь JSON с помощью jq
+        local extracted=$(echo "$json_part" | jq -c '.' 2>/dev/null | head -1)
+        if [ -n "$extracted" ] && echo "$extracted" | jq -e '.type' > /dev/null 2>&1; then
+            echo "$extracted"
+            return 0
+        fi
+    fi
+    
+    # Метод 3: Ищем {"type" и берем до ближайшей }
+    local json=$(echo "$text" | grep -o '{"type"[^}]*}' | head -1)
     if [ -n "$json" ] && echo "$json" | jq -e '.type' > /dev/null 2>&1; then
         echo "$json"
         return 0
@@ -820,6 +782,8 @@ start_chat() {
     fi
     
     local auto_continue=""
+    local error_retry_count=0
+    local max_retries=5
     
     while true; do
         # Если есть автоматическое продолжение, используем его
@@ -915,26 +879,71 @@ start_chat() {
         if echo "$response" | jq -e '.error' > /dev/null 2>&1; then
             local error_msg=$(echo "$response" | jq -r '.error.message // .error')
             echo -e "${RED}✗ Ошибка API: $error_msg${NC}\n"
+            
+            # Показываем полный ответ для отладки
+            if [ -n "$DEBUG" ] && [ "$DEBUG" = "1" ]; then
+                echo -e "${YELLOW}[DEBUG] Полный ответ API:${NC}"
+                echo "$response" | jq '.'
+                echo ""
+            fi
             continue
         fi
         
         # Парсим ответ
         local content=$(parse_response "$response")
         
-        if [ -z "$content" ]; then
-            echo -e "${RED}✗ Не удалось получить ответ от AI${NC}\n"
-            continue
+        # Отладка: показываем сырой ответ если установлена переменная DEBUG
+        if [ -n "$DEBUG" ] && [ "$DEBUG" = "1" ]; then
+            echo -e "${YELLOW}[DEBUG] Сырой ответ API:${NC}"
+            echo "$response" | jq '.' 2>/dev/null || echo "$response"
+            echo ""
+            echo -e "${YELLOW}[DEBUG] Извлеченный контент:${NC}"
+            echo "$content"
+            echo ""
         fi
         
-        # Отладка: показываем сырой ответ если установлена переменная DEBUG
-        if [ "$DEBUG" = "1" ]; then
-            echo -e "${YELLOW}[DEBUG] Сырой ответ AI:${NC}"
-            echo "$content" | head -5
+        if [ -z "$content" ]; then
+            echo -e "${RED}✗ Не удалось получить ответ от AI${NC}"
+            echo -e "${YELLOW}Возможные причины:${NC}"
+            echo -e "  - Неверный API ключ"
+            echo -e "  - Недостаточно средств на аккаунте"
+            echo -e "  - Проблемы с сетью"
+            echo -e "  - Неверная модель: $MODEL_ID"
             echo ""
+            echo -e "${CYAN}Включите отладку для деталей: DEBUG=1 fixadm${NC}\n"
+            continue
         fi
         
         # Извлекаем JSON из ответа
         content=$(extract_json "$content")
+        
+        # Проверяем что это валидный JSON
+        if ! echo "$content" | jq -e '.type' > /dev/null 2>&1; then
+            echo -e "${RED}✗ AI вернула невалидный JSON${NC}"
+            echo -e "${YELLOW}Ответ AI:${NC}"
+            echo "$content" | head -10
+            echo ""
+            echo -e "${CYAN}AI должна отвечать ОДНИМ JSON объектом:${NC}"
+            echo -e '  {"type": "command", "command": "...", "explanation": "..."}'
+            echo -e '  или'
+            echo -e '  {"type": "message", "content": "..."}'
+            echo ""
+            continue
+        fi
+        
+        # Отладка: показываем что получилось после extract_json
+        if [ -n "$DEBUG" ] && [ "$DEBUG" = "1" ]; then
+            echo -e "${YELLOW}[DEBUG] После extract_json:${NC}"
+            echo "$content"
+            echo -e "${YELLOW}[DEBUG] Проверка jq:${NC}"
+            if echo "$content" | jq -e '.type' > /dev/null 2>&1; then
+                echo "✓ JSON валиден"
+                echo "Тип: $(echo "$content" | jq -r '.type')"
+            else
+                echo "✗ JSON невалиден"
+            fi
+            echo ""
+        fi
         
         # Сохраняем сообщения в историю
         save_message "user" "$user_input"
@@ -948,23 +957,69 @@ start_chat() {
                 local cmd=$(echo "$content" | jq -r '.command')
                 local explanation=$(echo "$content" | jq -r '.explanation')
                 
+                # Отладка: показываем извлеченные данные
+                if [ -n "$DEBUG" ] && [ "$DEBUG" = "1" ]; then
+                    echo -e "${YELLOW}[DEBUG] Извлеченная команда: $cmd${NC}"
+                    echo -e "${YELLOW}[DEBUG] Извлеченное объяснение: $explanation${NC}"
+                    echo ""
+                fi
+                
+                # Проверяем что команда не пустая
+                if [ -z "$cmd" ] || [ "$cmd" = "null" ]; then
+                    echo -e "${RED}✗ Ошибка: AI не вернула команду${NC}\n"
+                    continue
+                fi
+                
                 echo -e "${BLUE}└─[${WHITE}AI${BLUE}]${NC}"
                 
-                # Выполняем команду и получаем результат
-                local cmd_result=$(execute_command "$cmd" "$explanation")
+                # Отладка: перед вызовом execute_command
+                if [ -n "$DEBUG" ] && [ "$DEBUG" = "1" ]; then
+                    echo -e "${YELLOW}[DEBUG] Вызываю execute_command...${NC}"
+                fi
+                
+                # Выполняем команду напрямую (не через $() чтобы не блокировать ввод)
+                execute_command "$cmd" "$explanation"
                 local cmd_exit_code=$?
+                
+                # Отладка: после execute_command
+                if [ -n "$DEBUG" ] && [ "$DEBUG" = "1" ]; then
+                    echo -e "${YELLOW}[DEBUG] execute_command завершена с кодом: $cmd_exit_code${NC}"
+                fi
                 
                 # Добавляем результат выполнения в историю для AI
                 if [ $cmd_exit_code -eq 0 ]; then
-                    save_message "user" "Команда выполнена успешно. Вывод: $cmd_result"
+                    save_message "user" "Команда выполнена успешно"
+                    # Сбрасываем счетчик ошибок при успехе
+                    error_retry_count=0
+                    last_error=""
                     # Автоматически продолжаем - отправляем сигнал AI продолжить
                     auto_continue="продолжай установку"
                     continue
                 else
-                    save_message "user" "Команда завершилась с ошибкой. Вывод: $cmd_result"
-                    # При ошибке тоже продолжаем - AI должна исправить
-                    auto_continue="исправь ошибку и продолжай"
-                    continue
+                    # Увеличиваем счетчик попыток
+                    error_retry_count=$((error_retry_count + 1))
+                    
+                    if [ $error_retry_count -ge $max_retries ]; then
+                        # Достигнут лимит попыток
+                        echo -e "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+                        echo -e "${RED}║ Достигнут лимит попыток исправления ($max_retries)        ║${NC}"
+                        echo -e "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
+                        echo -e "${YELLOW}Последняя ошибка:${NC}"
+                        echo -e "${CYAN}AI не смогла решить проблему автоматически.${NC}"
+                        echo -e "${CYAN}Попробуйте:${NC}"
+                        echo -e "  - Уточнить задачу"
+                        echo -e "  - Проверить права доступа"
+                        echo -e "  - Установить необходимые зависимости вручную"
+                        echo ""
+                        # Сбрасываем счетчик для следующей задачи
+                        error_retry_count=0
+                    else
+                        # Продолжаем попытки
+                        save_message "user" "Команда завершилась с ошибкой. Попытка $error_retry_count из $max_retries. ВАЖНО: Попробуй ДРУГОЙ подход!"
+                        # При ошибке продолжаем - AI должна исправить
+                        auto_continue="Команда завершилась с ошибкой. Попытка $error_retry_count из $max_retries. Проанализируй ошибку и попробуй ДРУГОЙ способ решения задачи. Не повторяй ту же команду!"
+                        continue
+                    fi
                 fi
                 
             elif [ "$msg_type" = "message" ]; then
@@ -972,12 +1027,16 @@ start_chat() {
                 echo -e "${BLUE}└─[${WHITE}AI${BLUE}]${NC}"
                 echo -e "${WHITE}$message${NC}\n"
                 
-                # Проверяем не является ли это финальным сообщением
-                if echo "$message" | grep -qi "установка завершена\|установлен\|готово\|доступ:"; then
+                # Проверяем является ли это финальным сообщением с инструкциями
+                if echo "$message" | grep -qi "установка завершена\|установлен и запущен\|готово\|доступ:\|команды для управления"; then
                     # Это финальная инструкция, не продолжаем автоматически
                     :
+                # Проверяем является ли это уточняющим вопросом
+                elif echo "$message" | grep -qi "уточните\|что именно\|какой\|какую\|пожалуйста, укажите\|не могу выполнить без\|необходимо указать"; then
+                    # Это уточняющий вопрос, не продолжаем автоматически
+                    :
                 else
-                    # Это промежуточное сообщение, продолжаем
+                    # Это промежуточное информационное сообщение, продолжаем
                     auto_continue="продолжай"
                     continue
                 fi

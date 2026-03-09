@@ -1,4 +1,4 @@
-# FixAdm v1.1
+# FixAdm v1.1.1
 AI-powered администратор для Ubuntu Linux
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
